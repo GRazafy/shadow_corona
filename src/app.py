@@ -26,13 +26,14 @@ DATA_FILE = os.path.join(ROOT_DIR,
 epidemie_df = (pd.read_csv(DATA_FILE, parse_dates=['Last Update'])
                .assign(day=lambda _df: _df['Last Update'].dt.date)
                .drop_duplicates(subset=['Country/Region', 'Province/State', 'day'])
-               [lambda df: df['day'] <= datetime.date(2020, 3, 10)]
+               [lambda df: df['day'] <= datetime.date(2020, 3, 24)]
               )
 
 countries = [{'label': c, 'value': c} for c in sorted(epidemie_df['Country/Region'].unique())]
 
 app = dash.Dash('Corona Virus Explorer')
 app.layout = html.Div([
+    dcc.Interval(id='refresh', interval=200),
     html.H1(['Corona Virus Explorer'], style={'textAlign': 'center'}),
     dcc.Tabs([
         dcc.Tab(label='Time', children=[

@@ -7,6 +7,7 @@ import pandas as pd
 
 import dash
 import dash_core_components as dcc
+import dash_bootstrap_components as dbc
 import dash_html_components as html
 from dash.dependencies import Input, Output
 
@@ -31,132 +32,196 @@ epidemie_df = (pd.read_csv(DATA_FILE, parse_dates=['Last Update'])
 
 countries = [{'label': c, 'value': c} for c in sorted(epidemie_df['Country/Region'].unique())]
 
-app = dash.Dash('Corona Virus Explorer')
+app = dash.Dash('Corona Virus Explorer',external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div([
     dcc.Interval(id='refresh', interval=200),
-    html.H1(['Corona Virus Explorer'], style={'textAlign': 'center'}),
-    dcc.Tabs([
-        dcc.Tab(label='Time', children=[
+    html.H2(['Corona Virus Explorer'], style={'textAlign': 'center'}),
+    html.Div([
+        html.Div([
             html.Div([
-                dcc.Dropdown(
-                    id='country',
-                    options=countries
-                )
-            ]),
+                html.H4(
+                    "Today Total: ",
+                ),
+                html.P(
+                    id="Counter",
+                ),
+            ],
+            className="count_container"
+            ),
             html.Div([
-                dcc.Dropdown(
-                    id='country2',
-                    options=countries
-                )
-            ]),
-            html.Div([
-                dcc.RadioItems(
-                    id='variable',
+                html.P(
+                    "Filter by construction date (or select range in histogram):",
+                    className="control_label",
+                    ),
+                dcc.DatePickerRange(
+                    id = 'datepicker-input',
+                    display_format='DD/MM/YYYY',
+                ),
+                dbc.RadioItems(
+                    id='radioitems-input',
                     options=[
-                        {'label': 'Confirmed', 'value': 'Confirmed'},
-                        {'label': 'Deaths', 'value': 'Deaths'},
-                        {'label': 'Recovered', 'value': 'Recovered'}
-                    ],
+                            {'label': 'Confirmed', 'value': 'Confirmed'},
+                            {'label': 'Deaths', 'value': 'Deaths'},
+                            {'label': 'Recovered', 'value': 'Recovered'},
+                            {'label': 'Active', 'value': 'Active'}
+                        ],
                     value='Confirmed',
-                    labelStyle={'display': 'inline-block'}
-                )
+                ),
+                html.P("Filter by countries :"),
+                dcc.Dropdown(
+                    id="countries",
+                    options=countries,
+                    multi=True,
+                    className="dcc_control",
+                ),
+            ],
+            className="option_container"
+            ),
+        ],
+        className="side_container four columns",
+        ),
+        html.Div([
+            dcc.Tabs([
+                dcc.Tab(label='Time', children=[
+                    html.Div([
+                        dcc.Graph(id='graph1')
+                    ]),   
+                ]),
+                dcc.Tab(label='Map', children=[
+                    dcc.Graph(id='map1'),
+                    dcc.Slider(
+                        id='map_day',
+                        min=0,
+                        max=(epidemie_df['day'].max() - epidemie_df['day'].min()).days,
+                        value=0,
+                        updatemode='drag',
+                        tooltip = { 
+                            'always_visible': True
+                        }
+                    ),
+                ]),
+                #TODO change Dropdown to current countries
+                dcc.Tab(label='Model',children=[
+           		  html.H6(['The model']),
+           		  dcc.Graph(id='graph2'),
+          		  dcc.Dropdown(id='country3',options=countries)
+                ]),
             ]),
-            html.Div([
-                dcc.Graph(id='graph1')
-            ]),   
-        ]),
-        dcc.Tab(label='Map', children=[
-            dcc.Graph(id='map1'),
-            dcc.Slider(
-                id='map_day',
-                min=0,
-                max=(epidemie_df['day'].max() - epidemie_df['day'].min()).days,
-                value=0,
-                #marks={i:str(date) for i, date in enumerate(epidemie_df['day'].unique())}
-                marks={i:str(i) for i, date in enumerate(epidemie_df['day'].unique())}
-            )  
-        ]),
-    ]),
+        ],
+        className="main_container eight columns",
+        ),
+    ],
+    className="MainLayout",
+    ),
 ])
-
+@app.callback(Output("Counter", "children"),    
+    [
+        Input('radioitems-input', 'value'),
+    ]
+)
+def update_statusBar(variable):
+    return epidemie_df.groupby('day').agg({variable: 'sum'}).max()
 @app.callback(
     Output('graph1', 'figure'),
     [
-        Input('country', 'value'),
-        Input('country2', 'value'),
-        Input('variable', 'value'),        
+        Input('countries','value'),
+        Input('radioitems-input', 'value'),        
     ]
 )
-def update_graph(country, country2, variable):
-    print(country)
-    if country is None:
-        graph_df = epidemie_df.groupby('day').agg({variable: 'sum'}).reset_index()
-    else:
-        graph_df = (epidemie_df[epidemie_df['Country/Region'] == country]
+def update_graph(countries, variable):
+    graphs_df = []
+    if countries != [] and type(countries) is list:
+        for e_country in countries:
+                graphs_df.append(epidemie_df[epidemie_df['Country/Region'] == e_country]
                     .groupby(['Country/Region', 'day'])
                     .agg({variable: 'sum'})
                     .reset_index()
-                   )
-    if country2 is not None:
-        graph2_df = (epidemie_df[epidemie_df['Country/Region'] == country2]
-                     .groupby(['Country/Region', 'day'])
-                     .agg({variable: 'sum'})
-                     .reset_index()
-                    )
-
-        
-    #data : [dict(...graph_df...)] + ([dict(...graph2_df)] if country2 is not None else [])
-        
+                )
+                print(graphs_df)
+                   
+    graph_df = epidemie_df.groupby('day').agg({variable: 'sum'}).reset_index()
+    traces = []
+    count = 0
+    if countries != [] and type(countries) is list:
+        for graph in graphs_df:
+           traces.append(dict(
+                x=graph['day'],
+                y=graph[variable],
+                type='line',
+                name=countries[count]
+           ))
+           count = count+1
+    else:
+        traces.append(dict(
+            x=graph_df['day'],
+            y=graph_df[variable],
+            type='line',
+            name='Total'
+        ))
     return {
-        'data': [
-            dict(
-                x=graph_df['day'],
-                y=graph_df[variable],
-                type='line',
-                name=country if country is not None else 'Total'
-            )
-        ] + ([
-            dict(
-                x=graph2_df['day'],
-                y=graph2_df[variable],
-                type='line',
-                name=country2
-            )            
-        ] if country2 is not None else [])
-    }
+        'data':traces
+    }    
+
 
 @app.callback(
     Output('map1', 'figure'),
     [
         Input('map_day', 'value'),
+        Input('radioitems-input', 'value'),
     ]
 )
-def update_map(map_day):
+def update_map(map_day,variable):
     day = epidemie_df['day'].unique()[map_day]
     map_df = (epidemie_df[epidemie_df['day'] == day]
-              .groupby(['Country/Region'])
-              .agg({'Confirmed': 'sum', 'Latitude': 'mean', 'Longitude': 'mean'})
+              .groupby(['Combined_Key'])
+              .agg({variable: 'sum', 'Latitude': 'mean', 'Longitude': 'mean'})
               .reset_index()
              )
-    print(map_day)
-    print(day)
-    print(map_df.head())
+    print(epidemie_df['Combined_Key'])
     return {
         'data': [
             dict(
                 type='scattergeo',
                 lon=map_df['Longitude'],
                 lat=map_df['Latitude'],
-                text=map_df.apply(lambda r: r['Country/Region'] + ' (' + str(r['Confirmed']) + ')', axis=1),
+                text=map_df.apply(lambda r: r['Combined_Key'] + ' (' + str(r[variable]) + ')', axis=1),
                 mode='markers',
                 marker=dict(
-                    size=np.maximum(map_df['Confirmed'] / 1_000, 5)
+                    size=np.maximum(2*np.log(map_df[variable]), 5)
                 )
             )
         ],
         'layout': dict(
             title=str(day),
-            geo=dict(showland=True),
+            autosize=True,
+            automargin=True,
+            margin=dict(l=30, r=30, b=20, t=40),
+            hovermode="closest",
+            plot_bgcolor="#F9F9F9",
+            paper_bgcolor="#F9F9F9",
+            geo=dict(
+                    showland = True,
+                    landcolor = "rgb(212, 212, 212)",
+                    subunitcolor = "rgb(255, 255, 255)",
+                    countrycolor = "rgb(255, 255, 255)",
+                    showlakes = True,
+                    lakecolor = "rgb(255, 255, 255)",
+                    showsubunits = True,
+                    showcountries = True,
+                    resolution = 50,
+                    # lonaxis = dict(
+                    #     showgrid = False,
+                    #     gridwidth = 0.5,
+                    #     range= [ -140.0, -55.0 ],
+                    #     dtick = 5
+                    # ),
+                    # lataxis = dict (
+                    #     showgrid = False,
+                    #     gridwidth = 0.5,
+                    #     range= [ 20.0, 60.0 ],
+                    #     dtick = 5
+                    # )
+            )
         )
     }
 
